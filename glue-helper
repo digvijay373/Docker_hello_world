@@ -1,0 +1,203 @@
+from pyspark.sql import SparkSession
+from pyspark.sql.types import StructType, StructField, DateType, StringType
+import pandas as pd
+import pandas as pd
+from pydantic import BaseModel, EmailStr, create_model
+from datetime import date, datetime, time, timedelta
+from dateutil import parser
+from typing import Optional, Type
+from fugue import transform
+# Initialize a Spark session
+spark = SparkSession.builder \
+    .appName("DateSchemaExample") \
+    .config("spark.driver.memory", "4g") \
+    .getOrCreate()
+# Define schema with all string types
+schema = StructType([
+    StructField("Name", StringType(), True),
+    StructField("Age", StringType(), True),
+    StructField("Email", StringType(), True),
+    StructField("Date", StringType(), True)
+])
+schema = StructType(schema.fields + [
+    StructField("_corrupt_record", StringType(), True)
+])
+# Sample data
+
+
+# Path to your CSV file
+csv_file_path = "datata.csv"
+
+# Create Spark DataFrame
+
+# Create Spark DataFrame with corrupt record handling
+df = spark.read.option("header", True) \
+    .option("mode", "PERMISSIVE") \
+    .option("columnNameOfCorruptRecord", "_corrupt_record") \
+    .schema(schema) \
+    .csv(csv_file_path)
+# Show the DataFrame
+df.show()
+df=df.drop("_corrupt_record")
+df = df.toPandas()
+
+
+
+# Define the schema dictionary
+schema_dict_fug = {
+    'Name': 'string',
+    'Age': 'int',
+    'Email': 'email',
+    'Date': 'date'
+}
+
+schema_dict = {
+    'Name': (str, ...),
+    'Age': (int, ...),
+    'Email': (str, ...),
+    'Date':(date, ...)
+}
+
+
+def create_pydantic_model(schema: dict) -> Type[BaseModel]:
+    fields = {}
+    type_mapping = {
+        'string': (Optional[str], None),
+        'int': (Optional[int], None),
+        'float': (Optional[float], None),
+        'email': (Optional[EmailStr], None),
+        'date': (Optional[date], None),
+        'datetime': (Optional[datetime], None),
+        'timestamp': (Optional[datetime], None),
+    }
+    for field_name, field_type in schema.items():
+        fields[field_name] = type_mapping[field_type]
+
+    return type(
+        'DynamicModel',
+        (BaseModel,),
+        {field: (field_type, None) for field, (field_type, _) in fields.items()}
+    )
+
+DynamicModel = create_model('DynamicModel', **schema_dict)
+
+# Parse and validate DataFrame
+
+# Define the parse and validate function using the dynamic model
+def parse_and_validate(df: pd.DataFrame) -> pd.DataFrame:
+    def _parse_row(row):
+        parsed_row = {}
+        for field, value in row.items():
+            print(field)
+            print(value)
+            if field in schema_dict_fug:
+                field_type = schema_dict_fug[field]
+                print(field_type)
+                if value is None:
+                    print("shinju sasake")
+                    # Replace null values with default values based on the field type
+                    if field_type == 'int':
+                        parsed_row[field] = 0
+                    elif field_type == 'float':
+                        parsed_row[field] = 0.0
+                    elif field_type == 'email':
+                        print("email shuinju")
+                        parsed_row[field] = 'lol@gmail.com'
+                    elif field_type == 'date':
+                        parsed_row[field] = '1999-06-06'  # Use today's date as default
+                    elif field_type == 'datetime' or field_type == 'timestamp':
+                        parsed_row[field] = '1999-06-06'  # Use current datetime as default
+                else:
+                     if field_type == 'date':
+                      try:
+                        parsed_row[field] = parser.parse(value).date().isoformat()
+                      except ValueError:
+                        raise ValueError(f"Invalid date format for '{value}'")
+                     elif field_type == 'datetime':
+                        try:
+                            parsed_row[field] = parser.parse(value)
+                        except ValueError:
+                            raise ValueError(f"Invalid datetime format for '{value}'")
+                     elif field_type == 'timestamp':
+                        try:
+                            parsed_row[field] = datetime.fromtimestamp(float(value))
+                        except ValueError:
+                            raise ValueError(f"Invalid timestamp format for '{value}'")
+                     elif field_type == 'int':
+                         value = int(round(float(value)))
+                         parsed_row[field] = value
+                     else:
+                        parsed_row[field] = value
+        return DynamicModel(**parsed_row).dict()
+
+
+    validated_data = []
+    for _, row in df.iterrows():
+        try:
+            validated_data.append(_parse_row(row))
+        except ValueError as e:
+            print(f"Validation failed for row with values {row.values}: {str(e)}")
+
+    return pd.DataFrame(validated_data)
+
+
+
+def generate_fugue_schema(schema: dict) -> str:
+    type_mapping = {
+        'string': 'str',
+        'int': 'int',
+        'float': 'float',
+        'email': 'str',
+        'date': 'date',
+        'datetime': 'datetime',
+        'timestamp': 'timestamp',
+    }
+    return ", ".join([f"{field}:{type_mapping[field_type]}" for field, field_type in schema.items()])
+
+
+fugue_schema = generate_fugue_schema(schema_dict_fug)
+# Use Fugue to apply the parsing and validation function
+validated_df = transform(df, parse_and_validate, schema=fugue_schema)
+
+# Show the validated DataFrame
+print(validated_df)
+# Stop the Spark session
+spark.stop()
+
+
+
+
+# from datetime import date, datetime
+# from decimal import Decimal
+
+# def convert_schema(schema_dict):
+#     converted_schema = {}
+#     for key, value in schema_dict.items():
+#         if value == 'string':
+#             converted_schema[key] = (str, ...)
+#         elif value == 'int':
+#             converted_schema[key] = (int, ...)
+#         elif value == 'email':
+#             converted_schema[key] = (str, ...)
+#         elif value == 'date':
+#             converted_schema[key] = (date, ...)
+#         elif value == 'datetime':
+#             converted_schema[key] = (datetime, ...)
+#         elif value == 'decimal':
+#             converted_schema[key] = (Decimal, ...)
+#         elif value == 'float':
+#             converted_schema[key] = (float, ...)
+#     return converted_schema
+
+# # Example usage
+# schema_dict_fug = {
+#     'Name': 'string',
+#     'Age': 'int',
+#     'Email': 'email',
+#     'Date': 'date',
+#     'DateTime': 'datetime',
+#     'Amount': 'decimal',
+#     'Score': 'float'
+# }
+# schema_dict = convert_schema(schema_dict_fug)
+# print(schema_dict)

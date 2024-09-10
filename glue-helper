@@ -174,3 +174,53 @@ logger.stop()
 logger.save_logs_to_backup()
 logger.log("All items have been processed.")
 
+
+
+import boto3
+
+# Initialize the S3 client
+s3 = boto3.client('s3')
+
+bucket_name = 'your-s3-bucket-name'
+documents_prefix = 'Documents/'  # Root folder where claim PDFs are stored
+
+# Function to list all PDF files in the 'Documents/' folder recursively
+def poll_for_pdfs(bucket, prefix):
+    pdf_files = []
+    
+    # Paginate through the S3 objects
+    paginator = s3.get_paginator('list_objects_v2')
+    response_iterator = paginator.paginate(Bucket=bucket, Prefix=prefix)
+
+    for page in response_iterator:
+        if 'Contents' in page:
+            for obj in page['Contents']:
+                key = obj['Key']
+                if key.endswith('.pdf'):  # Only select PDF files
+                    pdf_files.append(key)
+
+    return pdf_files
+
+# Call the function to retrieve the list of PDF file paths
+pdf_files = poll_for_pdfs(bucket_name, documents_prefix)
+
+# Print the list of found PDFs
+for pdf in pdf_files:
+    print(f"Found PDF: s3://{bucket_name}/{pdf}")
+
+from IPython.display import display, IFrame
+
+# Function to download and display a PDF file from S3
+def display_pdf_from_s3(s3_bucket, s3_key):
+    # Download the PDF file from S3 to a local file
+    local_pdf_filename = s3_key.split('/')[-1]  # Extract just the file name
+    s3.download_file(s3_bucket, s3_key, local_pdf_filename)
+
+    # Display the PDF using IFrame
+    display(IFrame(local_pdf_filename, width=600, height=800))
+
+# Iterate through each PDF path, download and display the PDF
+for pdf in pdf_files:
+    print(f"Displaying PDF: {pdf}")
+    display_pdf_from_s3(bucket_name, pdf)
+

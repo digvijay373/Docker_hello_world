@@ -224,3 +224,53 @@ for pdf in pdf_files:
     print(f"Displaying PDF: {pdf}")
     display_pdf_from_s3(bucket_name, pdf)
 
+
+
+def transform_multiple_dicts(data_list):
+    """
+    Transform a list of dictionaries by mapping keys from one part to values from another part.
+    If there are two dictionaries, map 1st to 2nd. If there are three, map 1st to 3rd.
+    
+    Parameters:
+    data_list (list): List of dictionaries each containing mapping and values dictionaries.
+    
+    Returns:
+    dict: A new dictionary with keys mapped to corresponding values from the dictionaries.
+    """
+    result = {}
+    
+    for data in data_list:
+        # Identify keys for mapping and values
+        keys = list(data.keys())
+        
+        if len(keys) < 2 or len(keys) > 3:
+            raise ValueError("Each dictionary must contain 2 or 3 keys for mapping and values.")
+        
+        # Always map 1st dictionary
+        mapping_key = keys[0]
+        # Map to 2nd if there are two dictionaries, otherwise map to the 3rd
+        values_key = keys[2] if len(keys) == 3 else keys[1]
+        
+        # Extract mapping and values dictionaries
+        mapping = data[mapping_key]
+        values = data[values_key]
+        
+        # Update result with the current mapping
+        result[mapping_key] = values_key
+        result.update({mapping[i]: values[i] for i in mapping})
+    
+    return result
+
+# Example usage
+data_list = [
+    {
+        'Mapping Key': {0: 'key1', 1: 'key2', 2: 'key3'},
+        'Values Key': {0: 'value1', 1: 'value2', 2: 'value3'},
+        'Other Key': {0: 'valA', 1: 'valB', 2: 'valC'}
+    }
+]
+
+# Transform the list of dictionaries
+transformed = transform_multiple_dicts(data_list)
+print(transformed)
+

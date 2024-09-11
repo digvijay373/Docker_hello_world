@@ -274,3 +274,77 @@ data_list = [
 transformed = transform_multiple_dicts(data_list)
 print(transformed)
 
+
+
+
+def transform_with_prefixes(input_list, prefixes):
+    transformed_dict = {}
+    
+    # Iterate over the input list and the prefixes
+    for idx, data_dict in enumerate(input_list):
+        # Determine the prefix based on the current index
+        if idx < len(prefixes):
+            prefix = prefixes[idx]
+        else:
+            continue  # Skip if there are more dictionaries than prefixes
+        
+        # Add entries to the transformed dictionary
+        for i, value in data_dict.items():
+            # Use index + 1 to start numbering from 1
+            transformed_dict[f'{prefix}{i+1}'] = value
+    
+    return transformed_dict
+
+# Example input
+input_list = [
+    {0: 'key4', 1: 'key5', 2: 'key6'},
+    {0: 'val4', 1: 'val5', 2: 'val6'},
+    {0: 'val234', 1: 'val5345', 2: 'val456'},
+    {0: 'anotherKey', 1: 'anotherVal', 2: 'yetAnotherVal'}
+]
+
+# List of prefixes
+prefixes = ['Part', 'Orientation', 'Source']
+
+# Transform the dictionary
+result = transform_with_prefixes(input_list, prefixes)
+
+# Output the transformed dictionary
+print(result)
+
+
+
+def flatten_dict(input_dict):
+    output_list = []
+    
+    # Iterate through each key-value pair in the input dictionary
+    for key, value_dict in input_dict.items():
+        # Create a new dictionary for the flattened data
+        flattened_dict = {}
+        
+        # Start by adding the main key as the first item
+        flattened_dict[0] = key
+        
+        # Add the nested values to the flattened dictionary
+        for i, val in value_dict.items():
+            flattened_dict[i + 1] = val  # Start numbering from 1
+        
+        # Append the flattened dictionary to the output list
+        output_list.append(flattened_dict)
+    
+    return output_list
+
+# Example input
+input_dict = {
+    'key4': {0: 'key5', 1: 'key6'},
+    'val4': {0: 'val5', 1: 'val6'},
+    'val234': {0: 'val5345', 1: 'val456'},
+    'anotherKey': {0: 'anotherVal', 1: 'yetAnotherVal'}
+}
+
+# Flatten the dictionary
+result = flatten_dict(input_dict)
+
+# Output the flattened list of dictionaries
+print(result)
+

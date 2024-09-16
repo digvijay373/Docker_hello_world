@@ -348,3 +348,93 @@ result = flatten_dict(input_dict)
 # Output the flattened list of dictionaries
 print(result)
 
+
+
+
+import boto3
+import psycopg2
+import json
+from datetime import datetime
+from awsglue.context import GlueContext
+from pyspark.context import SparkContext
+
+# Initialize S3, Glue, and PostgreSQL connections
+s3_client = boto3.client('s3')
+sc = SparkContext()
+glueContext = GlueContext(sc)
+
+# S3 bucket and folder details
+bucket_name = "your-bucket-name"
+folder_name = "daily-files/"
+checkpoint_folder = "checkpoint/"
+
+# PostgreSQL connection details
+pg_conn = psycopg2.connect(
+    database="your_db", 
+    user="your_user", 
+    password="your_password", 
+    host="your_host", 
+    port="your_port"
+)
+pg_cursor = pg_conn.cursor()
+
+# Get today's date in the format YYYY-MM-DD for checkpoint file
+current_date = datetime.now().strftime('%Y-%m-%d')
+checkpoint_file = f"s3://{bucket_name}/{checkpoint_folder}{current_date}.json"
+
+# Function to load the checkpoint file for the current date
+def load_checkpoint():
+    try:
+        obj = s3_client.get_object(Bucket=bucket_name, Key=f'{checkpoint_folder}{current_date}.json')
+        processed_files = json.loads(obj['Body'].read().decode('utf-8'))["processed_files"]
+    except s3_client.exceptions.NoSuchKey:
+        # If no checkpoint file exists, return an empty list
+        processed_files = []
+    except Exception as e:
+        processed_files = []
+    return processed_files
+
+# Function to create/update the checkpoint file for the current date in S3
+def update_checkpoint(processed_files):
+    new_checkpoint = {"processed_files": processed_files}
+    s3_client.put_object(Body=json.dumps(new_checkpoint), Bucket=bucket_name, Key=f'{checkpoint_folder}{current_date}.json')
+
+# Step 1: List files in the S3 bucket
+response = s3_client.list_objects_v2(Bucket=bucket_name, Prefix=folder_name)
+
+# Step 2: Load checkpoint for the current date
+processed_files = load_checkpoint()
+
+# Step 3: Filter unprocessed files for today
+for obj in response['Contents']:
+    file_name = obj['Key'].split('/')[-1]  # Extract file name
+    if file_name not in processed_files:
+        # Step 4: Process the unprocessed file
+        file_path = f"s3://{bucket_name}/{obj['Key']}"
+        
+        # Load data using Glue
+        df = glueContext.create_dynamic_frame.from_options(
+            connection_type="s3", 
+            connection_options={"paths": [file_path]}, 
+            format="csv"
+        )
+        
+        # Convert to Spark DataFrame
+        df_spark = df.toDF()
+
+        # Insert data into PostgreSQL
+        for row in df_spark.collect():
+            insert_query = """INSERT INTO your_table (column1, column2, column3)
+                              VALUES (%s, %s, %s)"""
+            pg_cursor.execute(insert_query, (row['column1'], row['column2'], row['column3']))
+        
+        pg_conn.commit()
+
+        # Step 5: Update the checkpoint after successful processing
+        processed_files.append(file_name)
+        update_checkpoint(processed_files)
+
+# Close PostgreSQL connection
+pg_cursor.close()
+pg_conn.close()
+
